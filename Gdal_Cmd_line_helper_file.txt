@@ -1,0 +1,34 @@
+
+#looking at each file and getting the subdataset's one true name.
+C:\Users\local_miwvgej\Desktop\Wildfire_proj\TA_org>gdalinfo MOD14A2.A2018041.h08v05.006.2018049222541.pscs_000501559817.hdf
+C:\Users\local_miwvgej\Desktop\Wildfire_proj\LST_org>gdalinfo MOD11A1.A2018050.h08v04.006.2018051090221.pscs_000501561629.hdf
+C:\Users\local_miwvgej\Desktop\Wildfire_proj\NDVI_org>gdalinfo MOD13Q1.A2018049.h08v04.006.2018066165935.pscs_000501561627.hdf
+
+#the one true names.
+HDF4_EOS:EOS_GRID:"MOD13Q1.A2018049.h08v04.006.2018066165935.pscs_000501561627.hdf":MODIS_Grid_16DAY_250m_500m_VI:"250m 16 days NDVI"
+HDF4_EOS:EOS_GRID:"MOD11A1.A2018049.h08v04.006.2018050084922.pscs_000501561629.hdf":MODIS_Grid_Daily_1km_LST:LST_Day_1km
+HDF4_EOS:EOS_GRID:"MOD14A2.A2018025.h08v04.006.2018033223549.pscs_000501559817.hdf":MODIS_Grid_8Day_Fire:FireMask
+
+
+#translating the hdf files into geotiffs. This isolates the specific desired subset from the raster. 
+#Did not want the -sds flag bc it translated everything (which may be good in the future if I need the QA or ENVI layers, however, was not useful this time). 
+for %N in (NDVI_org\*.hdf) do gdal_translate -of GTiff HDF4_EOS:EOS_GRID:"%N":MODIS_Grid_16DAY_250m_500m_VI:"250m 16 days NDVI" NDVI_tifs\%~nN_NDVI.tif
+for %N in (LST_org\*.hdf) do gdal_translate -of GTiff HDF4_EOS:EOS_GRID:"%N":MODIS_Grid_Daily_1km_LST:LST_Day_1km LST_tifs\%~nN_LST.tif
+for %N in (TA_org\*.hdf) do gdal_translate -of GTiff HDF4_EOS:EOS_GRID:"%N":MODIS_Grid_8Day_Fire:FireMask TA_tifs\%~nN_TA.tif
+
+
+###projecting rasters & shapefiles into California Albers projection. (Needed full Proj4 def to put it in the right place).
+for /R %N in (fireshapes\*.shp) do ogr2ogr -t_srs "+proj=aea +lat_0=0 +lon_0=-120 +lat_1=34 +lat_2=40.5 +x_0=0 +y_0=-4000000 +datum=NAD83 +units=m +no_defs" -f "ESRI Shapefile" "fireshapes_p" "%N"
+for %N in (LST_tifs\*.tif) do gdalwarp -t_srs "+proj=aea +lat_0=0 +lon_0=-120 +lat_1=34 +lat_2=40.5 +x_0=0 +y_0=-4000000 +datum=NAD83 +units=m +no_defs" "%N" LST_tifs_p\%~nN_p.tif
+for %N in (NDVI_rs\*.tif) do gdalwarp -t_srs "+proj=aea +lat_0=0 +lon_0=-120 +lat_1=34 +lat_2=40.5 +x_0=0 +y_0=-4000000 +datum=NAD83 +units=m +no_defs" "%N" NDVI_rs\%~nN_p.tif
+for %N in (TA_rs\*.tif) do gdalwarp -t_srs "+proj=aea +lat_0=0 +lon_0=-120 +lat_1=34 +lat_2=40.5 +x_0=0 +y_0=-4000000 +datum=NAD83 +units=m +no_defs" "%N" TA_rs\%~nN_p.tif
+
+#next I needed to resample the LST image to have smaller pix values.
+for %N in (LST_tifs_p\*.tif) do gdalwarp -co COMPRESS=DEFLATE -ts 15000 15000 -r cubic %N  LST_rs\%~nN_rs.tif
+for %N in (NDVI_tifs\*.tif) do gdalwarp -co COMPRESS=DEFLATE -ts 15000 15000 -r cubic %N  NDVI_rs\%~nN_rs.tif
+for %N in (TA_tifs\*.tif) do gdalwarp -co COMPRESS=DEFLATE -ts 15000 15000 -r cubic %N  TA_rs\%~nN_rs.tif
+
+#now able to successfully clip together. Needed to have finer resolution of the raster. Shp file was the size of one pix.
+gdalwarp -cutline 1_2018140.shp -crop_to_cutline -dstnodata 0 MOD11A1.A2018140.h08v05.006.2018322072557.pscs_000501561629_LST_p_rs.tif successful_clip.tif
+
+
